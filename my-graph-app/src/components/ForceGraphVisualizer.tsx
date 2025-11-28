@@ -5,33 +5,61 @@ import Cytoscape from 'cytoscape';
 import { dijkstra } from '../algorithms/dijkstra';
 import { aStar } from '../algorithms/astar';
 
-// --- CONFIGURACIÓN DE DATOS ---
-type Positions = Record<string, { x: number; y: number }>;
+// --- 1. DEFINICIÓN DE DATASETS (Escenarios) ---
 
-const positions: Positions = {
-  A: { x: 50,  y: 50  },
-  B: { x: 150, y: 50  },
-  C: { x: 250, y: 50  },
-  D: { x: 150, y: 150 },
-  E: { x: 250, y: 150 },
-  X: { x: 50,  y: 150 },
-  Y: { x: 50,  y: 250 },
-  Z: { x: 150, y: 250 },
-  M: { x: 250, y: 250 },
+// Escenario 1: Grafo Simple (Original)
+const SIMPLE_POS = {
+  A: { x: 50,  y: 50  }, B: { x: 150, y: 50  }, C: { x: 250, y: 50  },
+  D: { x: 150, y: 150 }, E: { x: 250, y: 150 }, X: { x: 50,  y: 150 },
+  Y: { x: 50,  y: 250 }, Z: { x: 150, y: 250 }, M: { x: 250, y: 250 },
   N: { x: 350, y: 150 },
 };
-
-const edges: Array<[string, string]> = [
-  ['A','B'], ['B','C'], ['C','D'], ['D','E'],
-  ['A','X'], ['X','Y'], ['Y','Z'], ['Z','E'],
-  ['B','Y'], ['C','Z'], ['X','D'], ['D','N'], ['N','M'],
+const SIMPLE_EDGES: [string, string][] = [
+  ['A','B'], ['B','C'], ['C','D'], ['D','E'], ['A','X'], 
+  ['X','Y'], ['Y','Z'], ['Z','E'], ['B','Y'], ['C','Z'], 
+  ['X','D'], ['D','N'], ['N','M'],
 ];
+
+// Escenario 2: Grafo Avanzado (15 Nodos, estructura compleja)
+const ADVANCED_POS = {
+  // Columna 1
+  N1: { x: 0, y: 0 },   N2: { x: 0, y: 100 },  N3: { x: 0, y: 200 },  N4: { x: 0, y: 300 },
+  // Columna 2
+  N5: { x: 100, y: 50 }, N6: { x: 100, y: 150 }, N7: { x: 100, y: 250 },
+  // Columna 3 (Central)
+  N8: { x: 200, y: 0 },  N9: { x: 200, y: 100 }, N10: { x: 200, y: 200 }, N11: { x: 200, y: 300 },
+  // Columna 4
+  N12: { x: 300, y: 50 }, N13: { x: 300, y: 250 },
+  // Columna 5 (Finales)
+  N14: { x: 400, y: 100 }, N15: { x: 400, y: 200 }
+};
+
+const ADVANCED_EDGES: [string, string][] = [
+  // Conexiones verticales/cercanas
+  ['N1','N5'], ['N1','N8'], ['N2','N5'], ['N2','N6'], ['N3','N6'], ['N3','N7'], ['N4','N7'], ['N4','N11'],
+  // Conexiones medias
+  ['N5','N8'], ['N5','N9'], ['N6','N9'], ['N6','N10'], ['N7','N10'], ['N7','N11'],
+  // Interconexiones densas
+  ['N8','N12'], ['N9','N12'], ['N9','N13'], ['N10','N13'], ['N11','N13'],
+  // Finales
+  ['N12','N14'], ['N13','N14'], ['N13','N15'], ['N14','N15'],
+  // Atajos largos (Cross-links)
+  ['N2','N3'], ['N8','N9'], ['N10','N11'], ['N5','N12'] 
+];
+
+const DATASETS = {
+  simple: { pos: SIMPLE_POS, edges: SIMPLE_EDGES },
+  advanced: { pos: ADVANCED_POS, edges: ADVANCED_EDGES }
+};
+
+// --- FIN DATASETS ---
 
 interface Graph {
   [nodeId: string]: Array<{ id: string; weight: number }>;
 }
 
-function buildGraph(): { graph: Graph; cyElements: Cytoscape.ElementDefinition[] } {
+// Modificado para recibir datos dinámicos
+function buildGraph(positions: Record<string, {x: number, y: number}>, edges: [string, string][]): { graph: Graph; cyElements: Cytoscape.ElementDefinition[] } {
   const graph: Graph = {};
   for (const n in positions) {
     graph[n] = [];
@@ -47,6 +75,9 @@ function buildGraph(): { graph: Graph; cyElements: Cytoscape.ElementDefinition[]
   edges.forEach(([u, v]) => {
     const p1 = positions[u];
     const p2 = positions[v];
+    // Validación básica por seguridad
+    if(!p1 || !p2) return;
+
     const dx = p1.x - p2.x;
     const dy = p1.y - p2.y;
     const w = Math.hypot(dx, dy);
@@ -68,7 +99,6 @@ function buildGraph(): { graph: Graph; cyElements: Cytoscape.ElementDefinition[]
   return { graph, cyElements };
 }
 
-// --- ESTILOS CYTOSCAPE ---
 const CY_STYLES: any[] = [
   {
     selector: 'node',
@@ -92,16 +122,15 @@ const CY_STYLES: any[] = [
       'width': 3,
       'curve-style': 'bezier',
       'label': 'data(label)',
-      'font-size': '12px',
+      'font-size': '10px', // Un poco más pequeño para el grafo denso
       'text-background-opacity': 1,
       'text-background-color': '#ffffff',
-      'text-background-padding': '3px',
+      'text-background-padding': '2px',
       'text-background-shape': 'roundrectangle',
       'color': '#666',
       'text-rotation': 'autorotate'
     }
   },
-  // ESTILOS DE SELECCIÓN
   {
     selector: '.start-node',
     style: {
@@ -128,35 +157,21 @@ const CY_STYLES: any[] = [
       'text-outline-width': 2
     }
   },
-  // ESTILOS DE ALGORITMO
   {
     selector: '.visited-node',
-    style: {
-      'background-color': '#BBDEFB',
-      'border-color': '#64B5F6'
-    }
+    style: { 'background-color': '#BBDEFB', 'border-color': '#64B5F6' }
   },
   {
     selector: '.visited-edge',
-    style: {
-      'line-color': '#BBDEFB',
-      'width': 4
-    }
+    style: { 'line-color': '#BBDEFB', 'width': 4 }
   },
   {
     selector: '.path-edge',
-    style: {
-      'line-color': '#FF9800',
-      'width': 6,
-      'z-index': 999
-    }
+    style: { 'line-color': '#FF9800', 'width': 6, 'z-index': 999 }
   },
   {
     selector: '.final-path-node',
-    style: {
-       'border-width': 6,
-       'border-color': '#FF9800'
-    }
+    style: { 'border-width': 6, 'border-color': '#FF9800' }
   }
 ];
 
@@ -164,6 +179,9 @@ export const GraphVisualizerCytoscape: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [cy, setCy] = useState<Cytoscape.Core | null>(null);
 
+  // --- NUEVO ESTADO: CONTROL DE ESCENARIO ---
+  const [scenario, setScenario] = useState<'simple' | 'advanced'>('simple');
+  
   const [start, setStart] = useState<string | null>(null);
   const [end, setEnd]     = useState<string | null>(null);
   const [algo, setAlgo]   = useState<'dijkstra' | 'astar'>('dijkstra');
@@ -173,29 +191,47 @@ export const GraphVisualizerCytoscape: React.FC = () => {
   const [path,          setPath]          = useState<string[]>([]);
   const [distance,      setDistance]      = useState<number | null>(null);
 
-  const { graph, cyElements } = buildGraph();
+  // Construimos el grafo basándonos en el escenario actual
+  const currentData = DATASETS[scenario];
+  const { graph, cyElements } = buildGraph(currentData.pos, currentData.edges);
 
+  // REINICIO COMPLETO AL CAMBIAR DE ESCENARIO
+  useEffect(() => {
+    setStart(null);
+    setEnd(null);
+    setVisitedOrder([]);
+    setVisitedEdges([]);
+    setPath([]);
+    setDistance(null);
+  }, [scenario]);
+
+  // Inicialización de Cytoscape (Se recrea cuando cambia cyElements -> scenario)
   useEffect(() => {
     if (!containerRef.current) return;
+    
     const instance = Cytoscape({
       container: containerRef.current,
       elements: cyElements,
       style: CY_STYLES,
-      layout: { name: 'preset', padding: 10 },
-      minZoom: 0.5,
+      layout: { name: 'preset', padding: 20 },
+      minZoom: 0.3,
       maxZoom: 2,
+      wheelSensitivity: 0.2
     });
+    
+    // Auto-fit para centrar el nuevo grafo
+    instance.fit();
     setCy(instance);
-    return () => { instance.destroy(); };
-  }, []);
 
-  // Referencias para manejo de eventos (evitar stale closures)
+    return () => { instance.destroy(); };
+  }, [scenario]); // Dependencia clave: scenario
+
+  // Refs y Event Listeners (Igual que antes)
   const startRef = useRef(start);
   const endRef = useRef(end);
   useEffect(() => { startRef.current = start; }, [start]);
   useEffect(() => { endRef.current = end; }, [end]);
 
-  // Listener de eventos
   useEffect(() => {
     if (!cy) return;
     cy.off('tap', 'node');
@@ -204,19 +240,14 @@ export const GraphVisualizerCytoscape: React.FC = () => {
       const s = startRef.current;
       const e = endRef.current;
 
-      if (s === id) {
-        setStart(null);
-      } else if (e === id) {
-        setEnd(null);
-      } else if (!s) {
-        setStart(id);
-      } else {
-        setEnd(id);
-      }
+      if (s === id) { setStart(null); }
+      else if (e === id) { setEnd(null); }
+      else if (!s) { setStart(id); }
+      else { setEnd(id); }
     });
-  }, [cy]); // Solo depende de cy, usa refs para valores
+  }, [cy]);
 
-  // Actualizar estilos visuales (start/end)
+  // Sync de clases visuales
   useEffect(() => {
     if (!cy) return;
     cy.elements().removeClass('start-node end-node');
@@ -224,7 +255,7 @@ export const GraphVisualizerCytoscape: React.FC = () => {
     if (end) cy.getElementById(end).addClass('end-node');
   }, [cy, start, end]);
 
-  // Limpiar resultados si start/end se quitan
+  // Limpieza visual al cambiar selección
   useEffect(() => {
      if(cy && (!start || !end)) {
         cy.elements().removeClass('visited-node visited-edge path-edge final-path-node');
@@ -240,12 +271,12 @@ export const GraphVisualizerCytoscape: React.FC = () => {
       alert('Selecciona nodo inicio y fin.');
       return;
     }
-
     cy.elements().removeClass('visited-node visited-edge path-edge final-path-node');
 
+    // Usamos el 'graph' reconstruido para el escenario actual
     const result = algo === 'dijkstra'
       ? dijkstra(graph, start, end)
-      : aStar(graph, positions as any, start, end);
+      : aStar(graph, currentData.pos as any, start, end);
 
     setVisitedOrder(result.visitedOrder);
     setVisitedEdges(result.visitedEdges || []);
@@ -253,27 +284,20 @@ export const GraphVisualizerCytoscape: React.FC = () => {
     setDistance(result.distance);
 
     cy.batch(() => {
-      // Nodos visitados
       result.visitedOrder.forEach(nid => {
-        if (nid !== start && nid !== end) {
-          cy.getElementById(nid)?.addClass('visited-node');
-        }
+        if (nid !== start && nid !== end) cy.getElementById(nid)?.addClass('visited-node');
       });
-      // Aristas exploradas
       (result.visitedEdges || []).forEach(([u,v]) => {
         const edge = cy.getElementById(`${u}-${v}`).length ? cy.getElementById(`${u}-${v}`) : cy.getElementById(`${v}-${u}`);
         edge.addClass('visited-edge');
       });
-      // Ruta Final
       for (let i = 0; i < result.path.length - 1; i++) {
         const u = result.path[i];
         const v = result.path[i+1];
         const edge = cy.getElementById(`${u}-${v}`).length ? cy.getElementById(`${u}-${v}`) : cy.getElementById(`${v}-${u}`);
         edge.addClass('path-edge');
       }
-      result.path.forEach(nid => {
-        cy.getElementById(nid)?.addClass('final-path-node');
-      });
+      result.path.forEach(nid => cy.getElementById(nid)?.addClass('final-path-node'));
     });
   };
 
@@ -284,13 +308,16 @@ export const GraphVisualizerCytoscape: React.FC = () => {
     setVisitedEdges([]);
     setPath([]);
     setDistance(null);
-    if (cy) cy.elements().removeClass('visited-node visited-edge path-edge final-path-node start-node end-node');
+    if (cy) {
+      cy.elements().removeClass('visited-node visited-edge path-edge final-path-node start-node end-node');
+      cy.fit(); // Re-centrar al resetear
+    }
   };
 
   return (
     <div style={{ display: 'flex', height: '100vh', width: '100vw', fontFamily: 'Segoe UI, Roboto, Helvetica, Arial, sans-serif' }}>
       
-      {/* AREA DEL GRAFO (Sin aviso flotante) */}
+      {/* AREA DEL GRAFO */}
       <div style={{ flex: 1, position: 'relative', backgroundColor: '#f9f9f9' }}>
         <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
       </div>
@@ -310,7 +337,43 @@ export const GraphVisualizerCytoscape: React.FC = () => {
 
         <div style={{ flex: 1, padding: '20px', overflowY: 'auto' }}>
           
-          {/* SELECCIÓN */}
+          {/* --- NUEVA SECCIÓN: CAMBIO DE ESCENARIO --- */}
+          <div style={{ marginBottom: '24px' }}>
+            <h4 style={{ margin: '0 0 10px 0', textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: '1px', color: '#999' }}>Escenario</h4>
+            <div style={{ display: 'flex', backgroundColor: '#f0f0f0', borderRadius: '8px', padding: '4px' }}>
+              <button 
+                onClick={() => setScenario('simple')}
+                style={{
+                  flex: 1, padding: '8px', borderRadius: '6px', border: 'none', cursor: 'pointer', fontSize: '0.9rem',
+                  backgroundColor: scenario === 'simple' ? '#fff' : 'transparent',
+                  color: scenario === 'simple' ? '#333' : '#777',
+                  boxShadow: scenario === 'simple' ? '0 2px 5px rgba(0,0,0,0.1)' : 'none',
+                  fontWeight: scenario === 'simple' ? 'bold' : 'normal',
+                  transition: 'all 0.2s'
+                }}
+              >
+                Grafo Simple
+              </button>
+              <button 
+                onClick={() => setScenario('advanced')}
+                style={{
+                  flex: 1, padding: '8px', borderRadius: '6px', border: 'none', cursor: 'pointer', fontSize: '0.9rem',
+                  backgroundColor: scenario === 'advanced' ? '#fff' : 'transparent',
+                  color: scenario === 'advanced' ? '#333' : '#777',
+                  boxShadow: scenario === 'advanced' ? '0 2px 5px rgba(0,0,0,0.1)' : 'none',
+                  fontWeight: scenario === 'advanced' ? 'bold' : 'normal',
+                  transition: 'all 0.2s'
+                }}
+              >
+                Grafo Avanzado
+              </button>
+            </div>
+          </div>
+          {/* ------------------------------------------- */}
+
+          <hr style={{ border: 'none', borderTop: '1px solid #eee', margin: '20px 0' }} />
+
+          {/* SELECCIÓN NODOS */}
           <div style={{ marginBottom: '24px' }}>
             <h4 style={{ margin: '0 0 10px 0', textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: '1px', color: '#999' }}>Selección</h4>
             <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
@@ -332,15 +395,8 @@ export const GraphVisualizerCytoscape: React.FC = () => {
                 <div style={{ fontSize: '1.2rem', color: '#333' }}>{end || '-'}</div>
               </div>
             </div>
-            <button 
-              onClick={resetAll} 
-              style={{ width: '100%', padding: '8px', border: 'none', background: 'transparent', color: '#666', cursor: 'pointer', textDecoration: 'underline', fontSize: '0.9rem' }}
-            >
-              Reiniciar todo
-            </button>
+            <button onClick={resetAll} style={{ width: '100%', padding: '8px', border: 'none', background: 'transparent', color: '#666', cursor: 'pointer', textDecoration: 'underline', fontSize: '0.9rem' }}>Reiniciar todo</button>
           </div>
-
-          <hr style={{ border: 'none', borderTop: '1px solid #eee', margin: '20px 0' }} />
 
           {/* ALGORITMO */}
           <div style={{ marginBottom: '24px' }}>
@@ -355,28 +411,19 @@ export const GraphVisualizerCytoscape: React.FC = () => {
           {/* RESULTADOS */}
           {path.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-              
-              {/* Resumen Final */}
               <div style={{ backgroundColor: '#f0f4f8', padding: '15px', borderRadius: '8px', border: '1px solid #d9e2ec' }}>
                 <h3 style={{ marginTop: 0, color: '#102a43', fontSize: '1rem' }}>Ruta Óptima</h3>
                 <div style={{ marginBottom: '5px' }}>
                   <span style={{ fontSize: '1.25rem', fontWeight: 'bold', color: '#007bff' }}>{distance?.toFixed(2)}</span>
                   <span style={{ fontSize: '0.8rem', color: '#486581', marginLeft: 6 }}>unidades de costo</span>
                 </div>
-                <div style={{ fontSize: '0.9rem', color: '#333', lineHeight: '1.4' }}>
-                   {path.join(' → ')}
-                </div>
+                <div style={{ fontSize: '0.9rem', color: '#333', lineHeight: '1.4' }}>{path.join(' → ')}</div>
               </div>
 
-              {/* Historial Detallado (Todos los caminos recorridos) */}
               <div style={{ backgroundColor: '#fff', border: '1px solid #eee', borderRadius: '8px', padding: '15px' }}>
-                <h4 style={{ marginTop: 0, marginBottom: '10px', fontSize: '0.9rem', color: '#666' }}>
-                  Historial de Exploración (Paso a Paso)
-                </h4>
+                <h4 style={{ marginTop: 0, marginBottom: '10px', fontSize: '0.9rem', color: '#666' }}>Historial de Exploración (Paso a Paso)</h4>
                 <div style={{ maxHeight: '200px', overflowY: 'auto', fontSize: '0.85rem', color: '#444' }}>
-                  {visitedEdges.length === 0 ? (
-                    <p style={{ margin: 0, color: '#999' }}>Solo se visitaron nodos, sin expansiones.</p>
-                  ) : (
+                  {visitedEdges.length === 0 ? <p style={{ margin: 0, color: '#999' }}>Solo se visitaron nodos, sin expansiones.</p> : (
                     <ul style={{ paddingLeft: '20px', margin: 0 }}>
                       {visitedEdges.map(([u, v], index) => (
                         <li key={index} style={{ marginBottom: '4px' }}>
@@ -390,7 +437,6 @@ export const GraphVisualizerCytoscape: React.FC = () => {
                    Total pasos explorados: {visitedEdges.length}
                 </div>
               </div>
-
             </div>
           )}
 
